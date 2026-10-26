@@ -1,0 +1,5 @@
+.git
+.github
+bin
+static
+*_test.go

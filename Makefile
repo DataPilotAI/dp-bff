@@ -1,7 +1,8 @@
 DP_FE_VERSION ?= v0.1.0
 UPSTREAM ?= http://localhost:8080
+VITE_URL ?= http://localhost:5173
 
-.PHONY: test build fetch-fe run docker
+.PHONY: test build local docker
 
 test:
 	go vet ./...
@@ -10,14 +11,10 @@ test:
 build:
 	go build -trimpath -o bin/dp-bff ./cmd/dp-bff
 
-# Downloads the pinned frontend release into ./static (needs the gh CLI and access to dp-fe).
-fetch-fe:
-	rm -rf static && mkdir static
-	gh release download $(DP_FE_VERSION) --repo DataPilotAI/dp-fe --pattern 'dp-fe-$(DP_FE_VERSION).tar.gz*' --dir static
-	cd static && sha256sum -c dp-fe-$(DP_FE_VERSION).tar.gz.sha256 && tar -xzf dp-fe-$(DP_FE_VERSION).tar.gz && rm dp-fe-*
+# Local only: the BFF in front of the Vite server (hot reload). Run `npm run local` in dp-fe first.
+local:
+	DP_BFF_LOCAL_FRONTEND_URL=$(VITE_URL) DP_BFF_UPSTREAM_URL=$(UPSTREAM) go run ./cmd/dp-bff
 
-run:
-	DP_BFF_UPSTREAM_URL=$(UPSTREAM) go run ./cmd/dp-bff
-
+# Image bundling the dp-fe release for DP_FE_VERSION (a pushed tag). Needs GH_TOKEN with read access to dp-fe.
 docker:
 	docker build --build-arg DP_FE_VERSION=$(DP_FE_VERSION) --secret id=github_token,env=GH_TOKEN -t dp-bff:$(DP_FE_VERSION) .

@@ -15,21 +15,27 @@ Backend-for-frontend for DataPilot AI. It serves the built `dp-fe` bundle and pr
 | `DP_BFF_ADDR` | `:8081` | Listen address |
 | `DP_BFF_STATIC_DIR` | `static` | Directory holding the unpacked frontend build; must contain `index.html` |
 | `DP_BFF_MAX_BODY_MB` | `55` | Largest accepted request body (keep it above the frontend upload limit) |
+| `DP_BFF_LOCAL_FRONTEND_URL` | unset | Local only: proxy the frontend to a local Vite server instead of serving `DP_BFF_STATIC_DIR` (loopback hosts only) |
 
 The server refuses to start if `index.html` is missing. `GET /healthz` returns 204.
 
-## Run locally
+## Run locally (hot reload)
+
+Run the Vite server in `dp-fe`, then start the BFF in local mode. The BFF serves everything on :8081, proxies pages and the HMR websocket to Vite, and still proxies `/api/` to the backend. The path is forwarded to the backend unchanged (`/api/datasets` stays `/api/datasets`).
 
 ```sh
-make fetch-fe DP_FE_VERSION=v0.1.0   # downloads the dp-fe release into ./static (needs gh)
-make run UPSTREAM=http://localhost:8080
+# terminal 1, in dp-fe
+npm run local
+
+# terminal 2, in dp-bff
+make local UPSTREAM=http://localhost:8080   # then open http://localhost:8081
 ```
 
-Then open http://localhost:8081. The path is forwarded to the upstream unchanged (`/api/datasets` stays `/api/datasets`).
+Local mode turns the Content-Security-Policy off (Vite's dev client needs inline scripts), so it only accepts a `localhost` or loopback `DP_BFF_LOCAL_FRONTEND_URL`. Never set it in a deployed environment (dev, staging or production).
 
-## Frontend version
+## Frontend version (deployed environments)
 
-The frontend is pinned by tag. Releasing `dp-fe` (push a `v*` tag) publishes `dp-fe-<tag>.tar.gz` and a checksum; this repo downloads exactly that version and verifies the checksum.
+The frontend is pinned by tag. Releasing `dp-fe` (push a `v*` tag) publishes `dp-fe-<tag>.tar.gz` and a checksum; the image build downloads exactly that version and verifies the checksum.
 
 ```sh
 GH_TOKEN=... make docker DP_FE_VERSION=v0.1.0

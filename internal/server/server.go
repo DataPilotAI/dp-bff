@@ -22,11 +22,11 @@ const (
 	idleTimeout       = 120 * time.Second
 )
 
-// NewHandler wires the routes: /api/ to the upstream, /healthz, and the SPA for everything else.
+// NewHandler wires the routes: /api/ to the upstream, /healthz, and the frontend for everything else.
 func NewHandler(cfg config.Config, logger *slog.Logger) (http.Handler, error) {
-	// Fail at startup rather than serving 404s if the frontend bundle is missing.
-	if _, err := os.Stat(filepath.Join(cfg.StaticDir, indexFile)); err != nil {
-		return nil, fmt.Errorf("frontend bundle not found in %q: %w", cfg.StaticDir, err)
+	frontend, err := frontendHandler(cfg, logger)
+	if err != nil {
+		return nil, err
 	}
 
 	mux := http.NewServeMux()
@@ -34,9 +34,28 @@ func NewHandler(cfg config.Config, logger *slog.Logger) (http.Handler, error) {
 		w.WriteHeader(http.StatusNoContent)
 	})
 	mux.Handle(apiPrefix, middleware.LimitBody(cfg.MaxBodyBytes, proxy.New(cfg.UpstreamURL, logger)))
-	mux.Handle("/", static.NewSPA(os.DirFS(cfg.StaticDir)))
+	mux.Handle("/", frontend)
 
-	return middleware.SecurityHeaders(middleware.AccessLog(logger, middleware.Recover(logger, mux))), nil
+	handler := middleware.AccessLog(logger, middleware.Recover(logger, mux))
+	// Vite's dev client needs inline scripts and a websocket, which the production CSP forbids.
+	if cfg.LocalFrontendURL == nil {
+		handler = middleware.SecurityHeaders(handler)
+	}
+	return handler, nil
+}
+
+func frontendHandler(cfg config.Config, logger *slog.Logger) (http.Handler, error) {
+	if cfg.LocalFrontendURL != nil {
+		logger.Warn("local mode: proxying the frontend to the Vite dev server, security headers are off",
+			"frontend", cfg.LocalFrontendURL.Host)
+		return proxy.New(cfg.LocalFrontendURL, logger), nil
+	}
+
+	// Fail at startup rather than serving 404s if the frontend bundle is missing.
+	if _, err := os.Stat(filepath.Join(cfg.StaticDir, indexFile)); err != nil {
+		return nil, fmt.Errorf("frontend bundle not found in %q: %w", cfg.StaticDir, err)
+	}
+	return static.NewSPA(os.DirFS(cfg.StaticDir)), nil
 }
 
 // New builds the HTTP server. There is no read or write timeout on purpose: uploads
